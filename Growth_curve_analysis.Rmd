@@ -1,0 +1,96 @@
+---
+title: "Growth Curve Analysis"
+author: "Anders Kiledal"
+---
+
+Load required packages (and install if necessary).
+
+```{r}
+if (!require('tidyverse')) install.packages('tidyverse'); library('tidyverse')
+if (!require('modelr')) install.packages('modelr'); library('modelr')
+if (!require('growthcurver')) install.packages('growthcurver'); library('growthcurver')
+if (!require('here')) install.packages('here'); library('here')
+
+#Load functions in from functions.R
+source(here("functions.R"))
+```
+
+Load in data. This part is up to you, but the format has to be 'tidy' (i.e. tidyverse style with unique but often long columns)
+
+```{r}
+pfas_tidy <- read_csv("pfas_tidy.csv") %>% 
+  gather(key = "replicate", value = "od", -Treatment, -Concentration, -Date, -Hours, -Time) %>% #Make the data frame longer 
+  group_by(Concentration, Treatment, replicate) %>% 
+  mutate(od_cor = od + abs(min(od)) + 0.00001, #standardize starting values and add very small pseudo-count to avoid zeros
+         unique_id = paste(Concentration,replicate,sep = "_")) %>% 
+  dplyr::select(-od) %>% 
+  rename(od = "od_cor") %>% 
+  ungroup()
+```
+
+Fit growth curves based on treatment group(s).
+
+```{r}
+growth_results <- fit_growth(pfas_tidy,c("Concentration","replicate","unique_id"), time_col = "Hours",bg_cor = "none")
+
+models <- growth_results$model_data #model results, including columns for each of the growth curve values described below
+
+predicted <- growth_results$predicted_vals #Model predictions for plotting
+
+#Plot predicted OD values based on the fit model, with observed data as points
+predicted %>% filter(t < 100) %>% ggplot(aes(t,pred, group = unique_id, color = as.factor(Concentration))) + 
+  geom_line() +
+  scale_color_viridis_d() +
+  geom_point(data = pfas_tidy %>% rename(t = "Hours", pred = "od"), aes(t, pred, color = as.factor(Concentration)),inherit.aes = FALSE) +
+  theme_bw() +
+  labs(y = "od", x = "Hours", color = "Concentration")
+
+
+#Boxplot of growth rates by concentration
+models %>% ggplot(aes(as.factor(Concentration), r)) + 
+  geom_boxplot(outlier.shape = NA) +
+  geom_point(alpha = 0.4, color = "blue") +
+  theme_bw() +
+  labs(y = "Growth rate", x = "Concentration")
+
+#Run ANOVA for concentration
+aov(r ~ Concentration , data = models)
+
+#Run Kruskal-wallis test for concentation
+kruskal.test(r ~ Concentration, data=models)
+```
+
+
+The growth curve values `help("gcvals")` are:
+
+-   k: The carrying capacity parameter
+
+-   k\_se: The standard error of the carrying capacity parameter
+
+-   k\_p: The p value of the carrying capacity parameter
+
+-   n0: The initial population size
+
+-   n0\_se: The standard error of the initial population size
+
+-   n0\_p: The p value of the initial population size
+
+-   r: The growth rate
+
+-   r\_se: The standard error of the growth rate
+
+-   r\_p: The p value of the growthrate
+
+-   sigma: Residual standard error from non-linear least squares fit of the model to the data
+
+-   df: Degrees of freedom
+
+-   t\_mid: The time at the inflection point of the logistic curve (occurs at half of the carrying capacity)
+
+-   dt: The maximum doubling time, obtained by evaluating the the unrestrained growth of the population with growth rate r
+
+-   auc\_l: The area under the curve of the fitted logistic equation from time 0 to time t
+
+-   auc\_e: The area under the curve of the measurements.
+
+
