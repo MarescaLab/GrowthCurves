@@ -1,11 +1,12 @@
 ---
 title: "Growth Curve Analysis"
 author: "Anders Kiledal"
+output: pdf_document
 ---
 
 Load required packages (and install if necessary).
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 if (!require('tidyverse')) install.packages('tidyverse'); library('tidyverse')
 if (!require('modelr')) install.packages('modelr'); library('modelr')
 if (!require('growthcurver')) install.packages('growthcurver'); library('growthcurver')
@@ -17,11 +18,13 @@ source(here("functions.R"))
 
 Load in data. This part is up to you, but the format has to be 'tidy' (i.e. tidyverse style with unique but often long columns)
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 pfas_tidy <- read_csv("pfas_tidy.csv") %>% 
-  gather(key = "replicate", value = "od", -Treatment, -Concentration, -Date, -Hours, -Time) %>% #Make the data frame longer 
+  gather(key = "replicate", value = "od",
+         -Treatment, -Concentration, -Date, -Hours, -Time) %>% #Make the data frame longer 
   group_by(Concentration, Treatment, replicate) %>% 
-  mutate(od_cor = od + abs(min(od)) + 0.00001, #standardize starting values and add very small pseudo-count to avoid zeros
+  #standardize starting values and add very small pseudo-count to avoid zeros
+  mutate(od_cor = od + abs(min(od)) + 0.00001, 
          unique_id = paste(Concentration,replicate,sep = "_")) %>% 
   dplyr::select(-od) %>% 
   rename(od = "od_cor") %>% 
@@ -30,18 +33,22 @@ pfas_tidy <- read_csv("pfas_tidy.csv") %>%
 
 Fit growth curves based on treatment group(s).
 
-```{r}
-growth_results <- fit_growth(pfas_tidy,c("Concentration","replicate","unique_id"), time_col = "Hours",bg_cor = "none")
+```{r message=FALSE, warning=FALSE}
+growth_results <- fit_growth(pfas_tidy,c("Concentration","replicate","unique_id"),
+                             time_col = "Hours",bg_cor = "none")
 
-models <- growth_results$model_data #model results, including columns for each of the growth curve values described below
+#model results, including columns for each of the growth curve values described below
+models <- growth_results$model_data 
 
 predicted <- growth_results$predicted_vals #Model predictions for plotting
 
 #Plot predicted OD values based on the fit model, with observed data as points
-predicted %>% filter(t < 100) %>% ggplot(aes(t,pred, group = unique_id, color = as.factor(Concentration))) + 
+predicted %>% filter(t < 100) %>% 
+  ggplot(aes(t,pred, group = unique_id, color = as.factor(Concentration))) + 
   geom_line() +
   scale_color_viridis_d() +
-  geom_point(data = pfas_tidy %>% rename(t = "Hours", pred = "od"), aes(t, pred, color = as.factor(Concentration)),inherit.aes = FALSE) +
+  geom_point(data = pfas_tidy %>% rename(t = "Hours", pred = "od"), 
+             aes(t, pred, color = as.factor(Concentration)),inherit.aes = FALSE) +
   theme_bw() +
   labs(y = "od", x = "Hours", color = "Concentration")
 
